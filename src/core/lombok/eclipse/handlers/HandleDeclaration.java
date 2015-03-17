@@ -21,9 +21,8 @@
  */
 package lombok.eclipse.handlers;
 
-import static lombok.core.handlers.HandlerUtil.*;
-import lombok.ConfigurationKeys;
-import lombok.val;
+import static lombok.core.handlers.HandlerUtil.handleFlagUsage;
+import lombok.core.DeclarationType;
 import lombok.core.HandlerPriority;
 import lombok.eclipse.DeferUntilPostDiet;
 import lombok.eclipse.EclipseASTAdapter;
@@ -31,21 +30,27 @@ import lombok.eclipse.EclipseASTVisitor;
 import lombok.eclipse.EclipseNode;
 
 import org.eclipse.jdt.internal.compiler.ast.ArrayInitializer;
-import org.eclipse.jdt.internal.compiler.ast.ForStatement;
 import org.eclipse.jdt.internal.compiler.ast.ForeachStatement;
 import org.eclipse.jdt.internal.compiler.ast.LocalDeclaration;
 import org.mangosdk.spi.ProviderFor;
 
 /*
- * This class just handles 3 basic error cases. The real meat of eclipse 'val' support is in {@code PatchVal} and {@code PatchValEclipse}.
+ * This class just handles 3 basic error cases. The real meat of eclipse declarations ('val' or 'var') support is in {@code PatchDeclaration} and {@code PatchDeclarationEclipse}.
  */
 @ProviderFor(EclipseASTVisitor.class)
 @DeferUntilPostDiet
 @HandlerPriority(65536) // 2^16; resolution needs to work, so if the RHS expression is i.e. a call to a generated getter, we have to run after that getter has been generated.
-public class HandleVal extends EclipseASTAdapter {
-	@Override public void visitLocal(EclipseNode localNode, LocalDeclaration local) {
-		if (!EclipseHandlerUtil.typeMatches(val.class, localNode, local.type)) return;
-		handleFlagUsage(localNode, ConfigurationKeys.VAL_FLAG_USAGE, "val");
+public class HandleDeclaration extends EclipseASTAdapter {
+	@Override
+	public void visitLocal(EclipseNode localNode, LocalDeclaration local) {
+		for (DeclarationType declarationType : DeclarationType.types) {
+			doVisitLocal(declarationType, localNode, local);
+		}
+	}
+	
+	private void doVisitLocal(DeclarationType declarationType, EclipseNode localNode, LocalDeclaration local) {
+		if (!EclipseHandlerUtil.typeMatches(declarationType.annotation, localNode, local.type)) return;
+		handleFlagUsage(localNode, declarationType.usageFlag, declarationType.annotation.getSimpleName());
 		
 		boolean variableOfForEach = false;
 		
@@ -54,18 +59,18 @@ public class HandleVal extends EclipseASTAdapter {
 			variableOfForEach = fs.elementVariable == local;
 		}
 		
-		if (local.initialization == null && !variableOfForEach) {
-			localNode.addError("'val' on a local variable requires an initializer expression");
+		if (declarationType.isFinal && local.initialization == null && !variableOfForEach) {
+			localNode.addError("'" + declarationType.annotation.getSimpleName() + "' on a local variable requires an initializer expression");
 			return;
 		}
 		
 		if (local.initialization instanceof ArrayInitializer) {
-			localNode.addError("'val' is not compatible with array initializer expressions. Use the full form (new int[] { ... } instead of just { ... })");
+			localNode.addError("'" + declarationType.annotation.getSimpleName() + "' is not compatible with array initializer expressions. Use the full form (new int[] { ... } instead of just { ... })");
 			return;
 		}
 		
 		if (local.initialization != null && local.initialization.getClass().getName().equals("org.eclipse.jdt.internal.compiler.ast.LambdaExpression")) {
-			localNode.addError("'val' is not allowed with lambda expressions.");
+			localNode.addError("'" + declarationType.annotation.getSimpleName() + "' is not allowed with lambda expressions.");
 		}
 	}
 }

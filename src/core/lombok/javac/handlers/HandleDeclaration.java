@@ -23,8 +23,7 @@ package lombok.javac.handlers;
 
 import static lombok.core.handlers.HandlerUtil.handleFlagUsage;
 import static lombok.javac.handlers.JavacHandlerUtil.*;
-import lombok.ConfigurationKeys;
-import lombok.val;
+import lombok.core.DeclarationType;
 import lombok.core.HandlerPriority;
 import lombok.javac.JavacASTAdapter;
 import lombok.javac.JavacASTVisitor;
@@ -49,15 +48,22 @@ import com.sun.tools.javac.util.List;
 @ProviderFor(JavacASTVisitor.class)
 @HandlerPriority(65536) // 2^16; resolution needs to work, so if the RHS expression is i.e. a call to a generated getter, we have to run after that getter has been generated.
 @ResolutionResetNeeded
-public class HandleVal extends JavacASTAdapter {
-	@Override public void visitLocal(JavacNode localNode, JCVariableDecl local) {
-		if (local.vartype == null || (!local.vartype.toString().equals("val") && !local.vartype.toString().equals("lombok.val"))) return;
+public class HandleDeclaration extends JavacASTAdapter {
+	@Override
+	public void visitLocal(JavacNode localNode, JCVariableDecl local) {
+		for (DeclarationType declarationType : DeclarationType.types) {
+			doVisitLocal(declarationType, localNode, local);
+		}
+	}
+	
+	private void doVisitLocal(DeclarationType declarationType, JavacNode localNode, JCVariableDecl local) {
+		if (local.vartype == null || (!local.vartype.toString().equals(declarationType.annotation.getSimpleName()) && !local.vartype.toString().equals(declarationType.annotation.getName()))) return;
 		
 		JCTree source = local.vartype;
 		
-		if (!typeMatches(val.class, localNode, local.vartype)) return;
+		if (!typeMatches(declarationType.annotation, localNode, local.vartype)) return;
 		
-		handleFlagUsage(localNode, ConfigurationKeys.VAL_FLAG_USAGE, "val");
+		handleFlagUsage(localNode, declarationType.usageFlag, declarationType.annotation.getSimpleName());
 		
 		JCTree parentRaw = localNode.directUp().get();
 		if (parentRaw instanceof JCForLoop) {
@@ -80,19 +86,19 @@ public class HandleVal extends JavacASTAdapter {
 			}
 		}
 		
-		if (rhsOfEnhancedForLoop == null && local.init == null) {
-			localNode.addError("'val' on a local variable requires an initializer expression");
+		if (declarationType.isFinal && rhsOfEnhancedForLoop == null && local.init == null) {
+			localNode.addError("'" + declarationType.annotation.getSimpleName() + "' on a local variable requires an initializer expression");
 			return;
 		}
 		
 		if (local.init instanceof JCNewArray && ((JCNewArray)local.init).elemtype == null) {
-			localNode.addError("'val' is not compatible with array initializer expressions. Use the full form (new int[] { ... } instead of just { ... })");
+			localNode.addError("'" + declarationType.annotation.getSimpleName() + "' is not compatible with array initializer expressions. Use the full form (new int[] { ... } instead of just { ... })");
 			return;
 		}
 		
-		if (localNode.shouldDeleteLombokAnnotations()) JavacHandlerUtil.deleteImportFromCompilationUnit(localNode, "lombok.val");
+		if (localNode.shouldDeleteLombokAnnotations()) JavacHandlerUtil.deleteImportFromCompilationUnit(localNode, declarationType.annotation.getName());
 		
-		local.mods.flags |= Flags.FINAL;
+		if (declarationType.isFinal) local.mods.flags |= Flags.FINAL;
 		
 		addAnnotation(localNode, local, source);
 		
@@ -153,7 +159,7 @@ public class HandleVal extends JavacASTAdapter {
 				}
 				localNode.getAst().setChanged();
 			} catch (JavacResolution.TypeNotConvertibleException e) {
-				localNode.addError("Cannot use 'val' here because initializer expression does not have a representable type: " + e.getMessage());
+				localNode.addError("Cannot use '" + declarationType.annotation.getSimpleName() + "' here because initializer expression does not have a representable type: " + e.getMessage());
 				local.vartype = JavacResolution.createJavaLangObject(localNode.getAst());
 			}
 		} catch (RuntimeException e) {
@@ -166,8 +172,8 @@ public class HandleVal extends JavacASTAdapter {
 
 	private void addAnnotation(JavacNode localNode, JCVariableDecl local, JCTree source) {
 		if (!localNode.shouldDeleteLombokAnnotations()) {
-			JCAnnotation valAnnotation = recursiveSetGeneratedBy(localNode.getTreeMaker().Annotation(local.vartype, List.<JCExpression>nil()), source, localNode.getContext());
-			local.mods.annotations = local.mods.annotations == null ? List.of(valAnnotation) : local.mods.annotations.append(valAnnotation);
+			JCAnnotation declarationAnnotation = recursiveSetGeneratedBy(localNode.getTreeMaker().Annotation(local.vartype, List.<JCExpression>nil()), source, localNode.getContext());
+			local.mods.annotations = local.mods.annotations == null ? List.of(declarationAnnotation) : local.mods.annotations.append(declarationAnnotation);
 		}
 	}
 }

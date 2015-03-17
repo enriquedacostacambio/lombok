@@ -26,7 +26,7 @@ import java.lang.reflect.Method;
 
 import lombok.Lombok;
 
-public class PatchValEclipsePortal {
+public class PatchDeclarationEclipsePortal {
 	static final String LOCALDECLARATION_SIG = "org.eclipse.jdt.internal.compiler.ast.LocalDeclaration";
 	static final String PARSER_SIG = "org.eclipse.jdt.internal.compiler.parser.Parser";
 	static final String VARIABLEDECLARATIONSTATEMENT_SIG = "org.eclipse.jdt.core.dom.VariableDeclarationStatement";
@@ -73,9 +73,9 @@ public class PatchValEclipsePortal {
 		}
 	}
 	
-	public static void addFinalAndValAnnotationToVariableDeclarationStatement(Object converter, Object out, Object in) {
+	public static void addAnnotationToVariableDeclarationStatement(Object converter, Object out, Object in) {
 		try {
-			Reflection.addFinalAndValAnnotationToVariableDeclarationStatement.invoke(null, converter, out, in);
+			Reflection.addAnnotationToVariableDeclarationStatement.invoke(null, converter, out, in);
 		} catch (NoClassDefFoundError e) {
 			//ignore, we don't have access to the correct ECJ classes, so lombok can't possibly
 			//do anything useful here.
@@ -93,9 +93,9 @@ public class PatchValEclipsePortal {
 		}
 	}
 	
-	public static void addFinalAndValAnnotationToSingleVariableDeclaration(Object converter, Object out, Object in) {
+	public static void addAnnotationToSingleVariableDeclaration(Object converter, Object out, Object in) {
 		try {
-			Reflection.addFinalAndValAnnotationToSingleVariableDeclaration.invoke(null, converter, out, in);
+			Reflection.addAnnotationToSingleVariableDeclaration.invoke(null, converter, out, in);
 		} catch (NoClassDefFoundError e) {
 			//ignore, we don't have access to the correct ECJ classes, so lombok can't possibly
 			//do anything useful here.
@@ -116,21 +116,21 @@ public class PatchValEclipsePortal {
 	private static final class Reflection {
 		public static final Method copyInitializationOfForEachIterable;
 		public static final Method copyInitializationOfLocalDeclaration;
-		public static final Method addFinalAndValAnnotationToVariableDeclarationStatement;
-		public static final Method addFinalAndValAnnotationToSingleVariableDeclaration;
+		public static final Method addAnnotationToVariableDeclarationStatement;
+		public static final Method addAnnotationToSingleVariableDeclaration;
 		public static final Throwable problem;
 		
 		static {
 			Method m = null, n = null, o = null, p = null;
 			Throwable problem_ = null;
 			try {
-				m = PatchValEclipse.class.getMethod("copyInitializationOfForEachIterable", Class.forName(PARSER_SIG));
-				n = PatchValEclipse.class.getMethod("copyInitializationOfLocalDeclaration", Class.forName(PARSER_SIG));
-				o = PatchValEclipse.class.getMethod("addFinalAndValAnnotationToVariableDeclarationStatement",
+				m = PatchDeclarationEclipse.class.getMethod("copyInitializationOfForEachIterable", Class.forName(PARSER_SIG));
+				n = PatchDeclarationEclipse.class.getMethod("copyInitializationOfLocalDeclaration", Class.forName(PARSER_SIG));
+				o = PatchDeclarationEclipse.class.getMethod("addAnnotationToVariableDeclarationStatement",
 						Object.class,
 						Class.forName(VARIABLEDECLARATIONSTATEMENT_SIG),
 						Class.forName(LOCALDECLARATION_SIG));
-				p = PatchValEclipse.class.getMethod("addFinalAndValAnnotationToSingleVariableDeclaration",
+				p = PatchDeclarationEclipse.class.getMethod("addAnnotationToSingleVariableDeclaration",
 						Object.class,
 						Class.forName(SINGLEVARIABLEDECLARATION_SIG),
 						Class.forName(LOCALDECLARATION_SIG));
@@ -141,8 +141,8 @@ public class PatchValEclipsePortal {
 			}
 			copyInitializationOfForEachIterable = m;
 			copyInitializationOfLocalDeclaration = n;
-			addFinalAndValAnnotationToVariableDeclarationStatement = o;
-			addFinalAndValAnnotationToSingleVariableDeclaration = p;
+			addAnnotationToVariableDeclarationStatement = o;
+			addAnnotationToSingleVariableDeclaration = p;
 			problem = problem_;
 		}
 	}
