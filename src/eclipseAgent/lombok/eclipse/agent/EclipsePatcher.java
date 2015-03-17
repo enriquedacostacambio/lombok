@@ -531,8 +531,8 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 	
 	private static void patchEcjTransformers(ScriptManager sm, boolean ecj) {
 		addPatchesForDelegate(sm, ecj);
-		addPatchesForVal(sm);
-		if (!ecj) addPatchesForValEclipse(sm);
+		addPatchesForDeclaration(sm);
+		if (!ecj) addPatchesForDeclarationEclipse(sm);
 	}
 	
 	private static void addPatchesForDelegate(ScriptManager sm, boolean ecj) {
@@ -545,7 +545,7 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 				.build());
 	}
 	
-	private static void addPatchesForValEclipse(ScriptManager sm) {
+	private static void addPatchesForDeclarationEclipse(ScriptManager sm) {
 		final String LOCALDECLARATION_SIG = "org.eclipse.jdt.internal.compiler.ast.LocalDeclaration";
 		final String PARSER_SIG = "org.eclipse.jdt.internal.compiler.parser.Parser";
 		final String VARIABLEDECLARATIONSTATEMENT_SIG = "org.eclipse.jdt.core.dom.VariableDeclarationStatement";
@@ -571,29 +571,29 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 		sm.addScript(ScriptBuilder.wrapReturnValue()
 				.target(new MethodTarget(PARSER_SIG, "consumeExitVariableWithInitialization", "void"))
 				.request(StackRequest.THIS)
-				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$ValPortal", "copyInitializationOfLocalDeclaration", "void", "java.lang.Object"))
+				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$DeclarationPortal", "copyInitializationOfLocalDeclaration", "void", "java.lang.Object"))
 				.build());
 		
 		sm.addScript(ScriptBuilder.wrapReturnValue()
 				.target(new MethodTarget(PARSER_SIG, "consumeEnhancedForStatementHeader", "void"))
 				.request(StackRequest.THIS)
-				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$ValPortal", "copyInitializationOfForEachIterable", "void", "java.lang.Object"))
+				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$DeclarationPortal", "copyInitializationOfForEachIterable", "void", "java.lang.Object"))
 				.build());
 		
 		sm.addScript(ScriptBuilder.wrapReturnValue()
 				.target(new MethodTarget(ASTCONVERTER_SIG, "setModifiers", "void", VARIABLEDECLARATIONSTATEMENT_SIG, LOCALDECLARATION_SIG))
-				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$ValPortal", "addFinalAndValAnnotationToVariableDeclarationStatement",
+				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$DeclarationPortal", "addAnnotationToVariableDeclarationStatement",
 						"void", "java.lang.Object", "java.lang.Object", "java.lang.Object"))
 				.request(StackRequest.THIS, StackRequest.PARAM1, StackRequest.PARAM2).build());
 		
 		sm.addScript(ScriptBuilder.wrapReturnValue()
 				.target(new MethodTarget(ASTCONVERTER_SIG, "setModifiers", "void", SINGLEVARIABLEDECLARATION_SIG, LOCALDECLARATION_SIG))
-				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$ValPortal", "addFinalAndValAnnotationToSingleVariableDeclaration",
+				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$DeclarationPortal", "addAnnotationToSingleVariableDeclaration",
 						"void", "java.lang.Object", "java.lang.Object", "java.lang.Object"))
 				.request(StackRequest.THIS, StackRequest.PARAM1, StackRequest.PARAM2).build());
 	}
 	
-	private static void addPatchesForVal(ScriptManager sm) {
+	private static void addPatchesForDeclaration(ScriptManager sm) {
 		final String LOCALDECLARATION_SIG = "org.eclipse.jdt.internal.compiler.ast.LocalDeclaration";
 		final String FOREACHSTATEMENT_SIG = "org.eclipse.jdt.internal.compiler.ast.ForeachStatement";
 		final String FORSTATEMENT_SIG = "org.eclipse.jdt.internal.compiler.ast.ForStatement";
@@ -604,32 +604,32 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 		sm.addScript(ScriptBuilder.exitEarly()
 				.target(new MethodTarget(LOCALDECLARATION_SIG, "resolve", "void", BLOCKSCOPE_SIG))
 				.request(StackRequest.THIS, StackRequest.PARAM1)
-				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$Val", "handleValForLocalDeclaration", "boolean", LOCALDECLARATION_SIG, BLOCKSCOPE_SIG))
+				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$Declaration", "handleDeclarationForLocalDeclaration", "boolean", LOCALDECLARATION_SIG, BLOCKSCOPE_SIG))
 				.build());
 		
 		sm.addScript(ScriptBuilder.replaceMethodCall()
 				.target(new MethodTarget(LOCALDECLARATION_SIG, "resolve", "void", BLOCKSCOPE_SIG))
 				.methodToReplace(new Hook(EXPRESSION_SIG, "resolveType", TYPEBINDING_SIG, BLOCKSCOPE_SIG))
 				.requestExtra(StackRequest.THIS)
-				.replacementMethod(new Hook("lombok.launch.PatchFixesHider$Val", "skipResolveInitializerIfAlreadyCalled2", TYPEBINDING_SIG, EXPRESSION_SIG, BLOCKSCOPE_SIG, LOCALDECLARATION_SIG))
+				.replacementMethod(new Hook("lombok.launch.PatchFixesHider$Declaration", "skipResolveInitializerIfAlreadyCalled2", TYPEBINDING_SIG, EXPRESSION_SIG, BLOCKSCOPE_SIG, LOCALDECLARATION_SIG))
 				.build());
 		
 		sm.addScript(ScriptBuilder.replaceMethodCall()
 				.target(new MethodTarget(FOREACHSTATEMENT_SIG, "resolve", "void", BLOCKSCOPE_SIG))
 				.methodToReplace(new Hook(EXPRESSION_SIG, "resolveType", TYPEBINDING_SIG, BLOCKSCOPE_SIG))
-				.replacementMethod(new Hook("lombok.launch.PatchFixesHider$Val", "skipResolveInitializerIfAlreadyCalled", TYPEBINDING_SIG, EXPRESSION_SIG, BLOCKSCOPE_SIG))
+				.replacementMethod(new Hook("lombok.launch.PatchFixesHider$Declaration", "skipResolveInitializerIfAlreadyCalled", TYPEBINDING_SIG, EXPRESSION_SIG, BLOCKSCOPE_SIG))
 				.build());
 		
 		sm.addScript(ScriptBuilder.exitEarly()
 				.target(new MethodTarget(FOREACHSTATEMENT_SIG, "resolve", "void", BLOCKSCOPE_SIG))
 				.request(StackRequest.THIS, StackRequest.PARAM1)
-				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$Val", "handleValForForEach", "boolean", FOREACHSTATEMENT_SIG, BLOCKSCOPE_SIG))
+				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$Declaration", "handleDeclarationForForEach", "boolean", FOREACHSTATEMENT_SIG, BLOCKSCOPE_SIG))
 				.build());
 		
 		sm.addScript(ScriptBuilder.exitEarly()
 				.target(new MethodTarget(FORSTATEMENT_SIG, "resolve", "void", BLOCKSCOPE_SIG))
 				.request(StackRequest.THIS, StackRequest.PARAM1)
-				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$Val", "handleValForFor", "boolean", FORSTATEMENT_SIG, BLOCKSCOPE_SIG))
+				.decisionMethod(new Hook("lombok.launch.PatchFixesHider$Declaration", "handleDeclarationForFor", "boolean", FORSTATEMENT_SIG, BLOCKSCOPE_SIG))
 				.build());
 	}
 	

@@ -191,19 +191,19 @@ final class PatchFixesHider {
 		}
 	}
 	
-	/** Contains patch code to support {@code val} (eclipse specific) */
-	public static final class ValPortal {
+	/** Contains patch code to support {@code val} and @{code var} (eclipse specific) */
+	public static final class DeclarationPortal {
 		private static final Method COPY_INITIALIZATION_OF_FOR_EACH_ITERABLE;
 		private static final Method COPY_INITIALIZATION_OF_LOCAL_DECLARATION;
-		private static final Method ADD_FINAL_AND_VAL_ANNOTATION_TO_VARIABLE_DECLARATION_STATEMENT;
-		private static final Method ADD_FINAL_AND_VAL_ANNOTATION_TO_SINGLE_VARIABLE_DECLARATION;
+		private static final Method ADD_ANNOTATION_TO_VARIABLE_DECLARATION_STATEMENT;
+		private static final Method ADD_ANNOTATION_TO_SINGLE_VARIABLE_DECLARATION;
 		
 		static {
-			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchValEclipsePortal");
+			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDeclarationEclipsePortal");
 			COPY_INITIALIZATION_OF_FOR_EACH_ITERABLE = Util.findMethod(shadowed, "copyInitializationOfForEachIterable", Object.class);
 			COPY_INITIALIZATION_OF_LOCAL_DECLARATION = Util.findMethod(shadowed, "copyInitializationOfLocalDeclaration", Object.class);
-			ADD_FINAL_AND_VAL_ANNOTATION_TO_VARIABLE_DECLARATION_STATEMENT = Util.findMethod(shadowed, "addFinalAndValAnnotationToVariableDeclarationStatement", Object.class, Object.class, Object.class);
-			ADD_FINAL_AND_VAL_ANNOTATION_TO_SINGLE_VARIABLE_DECLARATION = Util.findMethod(shadowed, "addFinalAndValAnnotationToSingleVariableDeclaration", Object.class, Object.class, Object.class);
+			ADD_ANNOTATION_TO_VARIABLE_DECLARATION_STATEMENT = Util.findMethod(shadowed, "addAnnotationToVariableDeclarationStatement", Object.class, Object.class, Object.class);
+			ADD_ANNOTATION_TO_SINGLE_VARIABLE_DECLARATION = Util.findMethod(shadowed, "addAnnotationToSingleVariableDeclaration", Object.class, Object.class, Object.class);
 		}
 
 		public static void copyInitializationOfForEachIterable(Object parser) {
@@ -214,30 +214,30 @@ final class PatchFixesHider {
 			Util.invokeMethod(COPY_INITIALIZATION_OF_LOCAL_DECLARATION, parser);
 		}
 		
-		public static void addFinalAndValAnnotationToVariableDeclarationStatement(Object converter, Object out, Object in) {
-			Util.invokeMethod(ADD_FINAL_AND_VAL_ANNOTATION_TO_VARIABLE_DECLARATION_STATEMENT, converter, out, in);
+		public static void addAnnotationToVariableDeclarationStatement(Object converter, Object out, Object in) {
+			Util.invokeMethod(ADD_ANNOTATION_TO_VARIABLE_DECLARATION_STATEMENT, converter, out, in);
 		}
 		
-		public static void addFinalAndValAnnotationToSingleVariableDeclaration(Object converter, Object out, Object in) {
-			Util.invokeMethod(ADD_FINAL_AND_VAL_ANNOTATION_TO_SINGLE_VARIABLE_DECLARATION, converter, out, in);
+		public static void addAnnotationToSingleVariableDeclaration(Object converter, Object out, Object in) {
+			Util.invokeMethod(ADD_ANNOTATION_TO_SINGLE_VARIABLE_DECLARATION, converter, out, in);
 		}
 	}
 	
 	/** Contains patch code to support {@code val} (eclipse and ecj) */
-	public static final class Val {
+	public static final class Declaration {
 		private static final Method SKIP_RESOLVE_INITIALIZER_IF_ALREADY_CALLED;
 		private static final Method SKIP_RESOLVE_INITIALIZER_IF_ALREADY_CALLED2;
-		private static final Method HANDLE_VAL_FOR_LOCAL_DECLARATION;
-		private static final Method HANDLE_VAL_FOR_FOR_EACH;
-		private static final Method HANDLE_VAL_FOR_FOR;
+		private static final Method HANDLE_DECLARATION_FOR_LOCAL_DECLARATION;
+		private static final Method HANDLE_DECLARATION_FOR_FOR_EACH;
+		private static final Method HANDLE_DECLARATION_FOR_FOR;
 		
 		static {
-			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchVal");
+			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDeclaration");
 			SKIP_RESOLVE_INITIALIZER_IF_ALREADY_CALLED = Util.findMethod(shadowed, "skipResolveInitializerIfAlreadyCalled", Expression.class, BlockScope.class);
 			SKIP_RESOLVE_INITIALIZER_IF_ALREADY_CALLED2 = Util.findMethod(shadowed, "skipResolveInitializerIfAlreadyCalled2", Expression.class, BlockScope.class, LocalDeclaration.class);
-			HANDLE_VAL_FOR_LOCAL_DECLARATION = Util.findMethod(shadowed, "handleValForLocalDeclaration", LocalDeclaration.class, BlockScope.class);
-			HANDLE_VAL_FOR_FOR_EACH = Util.findMethod(shadowed, "handleValForForEach", ForeachStatement.class, BlockScope.class);
-			HANDLE_VAL_FOR_FOR = Util.findMethod(shadowed, "handleValForFor", ForStatement.class, BlockScope.class);
+			HANDLE_DECLARATION_FOR_LOCAL_DECLARATION = Util.findMethod(shadowed, "handleDeclarationForLocalDeclaration", LocalDeclaration.class, BlockScope.class);
+			HANDLE_DECLARATION_FOR_FOR_EACH = Util.findMethod(shadowed, "handleDeclarationForForEach", ForeachStatement.class, BlockScope.class);
+			HANDLE_DECLARATION_FOR_FOR = Util.findMethod(shadowed, "handleDeclarationForFor", ForStatement.class, BlockScope.class);
 		}
 		
 		public static TypeBinding skipResolveInitializerIfAlreadyCalled(Expression expr, BlockScope scope) {
@@ -248,16 +248,16 @@ final class PatchFixesHider {
 			return (TypeBinding) Util.invokeMethod(SKIP_RESOLVE_INITIALIZER_IF_ALREADY_CALLED2, expr, scope, decl);
 		}
 		
-		public static boolean handleValForLocalDeclaration(LocalDeclaration local, BlockScope scope) {
-			return (Boolean) Util.invokeMethod(HANDLE_VAL_FOR_LOCAL_DECLARATION, local, scope);
+		public static boolean handleDeclarationForLocalDeclaration(LocalDeclaration local, BlockScope scope) {
+			return (Boolean) Util.invokeMethod(HANDLE_DECLARATION_FOR_LOCAL_DECLARATION, local, scope);
 		}
 		
-		public static boolean handleValForForEach(ForeachStatement forEach, BlockScope scope) {
-			return (Boolean) Util.invokeMethod(HANDLE_VAL_FOR_FOR_EACH, forEach, scope);
+		public static boolean handleDeclarationForForEach(ForeachStatement forEach, BlockScope scope) {
+			return (Boolean) Util.invokeMethod(HANDLE_DECLARATION_FOR_FOR_EACH, forEach, scope);
 		}
 		
-		public static boolean handleValForFor(ForStatement forLoop, BlockScope scope) {
-			return (Boolean) Util.invokeMethod(HANDLE_VAL_FOR_FOR, forLoop, scope);
+		public static boolean handleDeclarationForFor(ForStatement forLoop, BlockScope scope) {
+			return (Boolean) Util.invokeMethod(HANDLE_DECLARATION_FOR_FOR, forLoop, scope);
 		}
 	}
 	

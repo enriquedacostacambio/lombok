@@ -30,6 +30,7 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 import lombok.Lombok;
+import lombok.core.DeclarationType;
 
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.IExtendedModifier;
@@ -50,8 +51,14 @@ import org.eclipse.jdt.internal.compiler.ast.SingleTypeReference;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.parser.Parser;
 
-public class PatchValEclipse {
-	public static void copyInitializationOfForEachIterable(Parser parser) {
+public class PatchDeclarationEclipse {
+	public static void copyInitializationOfForEachIterable(Class<? extends java.lang.annotation.Annotation> annotation, Parser parser) {
+		for(DeclarationType declarationType : DeclarationType.types) {
+			doCopyInitializationOfForEachIterable(declarationType, parser);
+		}
+	}
+	
+	private static void doCopyInitializationOfForEachIterable(DeclarationType declarationType, Parser parser) {
 		ASTNode[] astStack;
 		int astPtr;
 		try {
@@ -65,7 +72,7 @@ public class PatchValEclipse {
 		ForeachStatement foreachDecl = (ForeachStatement) astStack[astPtr];
 		ASTNode init = foreachDecl.collection;
 		if (init == null) return;
-		if (foreachDecl.elementVariable == null || !PatchVal.couldBeVal(foreachDecl.elementVariable.type)) return;
+		if (foreachDecl.elementVariable == null || !PatchDeclaration.couldBeDeclaration(declarationType, foreachDecl.elementVariable.type)) return;
 		
 		try {
 			if (Reflection.iterableCopyField != null) Reflection.iterableCopyField.set(foreachDecl.elementVariable, init);
@@ -73,8 +80,14 @@ public class PatchValEclipse {
 			// In ecj mode this field isn't there and we don't need the copy anyway, so, we ignore the exception.
 		}
 	}
-	
+
 	public static void copyInitializationOfLocalDeclaration(Parser parser) {
+		for(DeclarationType declarationType : DeclarationType.types) {
+			doCopyInitializationOfLocalDeclaration(declarationType, parser);
+		}
+	}
+	
+	private static void doCopyInitializationOfLocalDeclaration(DeclarationType declarationType, Parser parser) {
 		ASTNode[] astStack;
 		int astPtr;
 		try {
@@ -88,7 +101,7 @@ public class PatchValEclipse {
 		if (!(variableDecl instanceof LocalDeclaration)) return;
 		ASTNode init = variableDecl.initialization;
 		if (init == null) return;
-		if (!PatchVal.couldBeVal(variableDecl.type)) return;
+		if (!PatchDeclaration.couldBeDeclaration(declarationType, variableDecl.type)) return;
 		
 		try {
 			if (Reflection.initCopyField != null) Reflection.initCopyField.set(variableDecl, init);
@@ -97,27 +110,33 @@ public class PatchValEclipse {
 		}
 	}
 	
-	public static void addFinalAndValAnnotationToSingleVariableDeclaration(Object converter, SingleVariableDeclaration out, LocalDeclaration in) {
+	public static void addAnnotationToSingleVariableDeclaration(Object converter, SingleVariableDeclaration out, LocalDeclaration in) {
 		@SuppressWarnings("unchecked") List<IExtendedModifier> modifiers = out.modifiers();
-		addFinalAndValAnnotationToModifierList(converter, modifiers, out.getAST(), in);
+		addAnnotationToModifierList(converter, modifiers, out.getAST(), in);
 	}
 	
-	public static void addFinalAndValAnnotationToVariableDeclarationStatement(Object converter, VariableDeclarationStatement out, LocalDeclaration in) {
+	public static void addAnnotationToVariableDeclarationStatement(Object converter, VariableDeclarationStatement out, LocalDeclaration in) {
 		@SuppressWarnings("unchecked") List<IExtendedModifier> modifiers = out.modifiers();
-		addFinalAndValAnnotationToModifierList(converter, modifiers, out.getAST(), in);
+		addAnnotationToModifierList(converter, modifiers, out.getAST(), in);
 	}
 	
-	public static void addFinalAndValAnnotationToModifierList(Object converter, List<IExtendedModifier> modifiers, AST ast, LocalDeclaration in) {
-		// First check that 'in' has the final flag on, and a @val / @lombok.val annotation.
-		if ((in.modifiers & ClassFileConstants.AccFinal) == 0) return;
+	private static void addAnnotationToModifierList(Object converter, List<IExtendedModifier> modifiers, AST ast, LocalDeclaration in) {
+		for(DeclarationType declarationType : DeclarationType.types) {
+			doAddAnnotationToModifierList(declarationType, true, converter, modifiers, ast, in);
+		}
+	}
+		
+	private static void doAddAnnotationToModifierList(DeclarationType declarationType, boolean isFinal, Object converter, List<IExtendedModifier> modifiers, AST ast, LocalDeclaration in) {
+		// First check that 'in' has the final flag on, and a @val / @lombok.val / @var / @lombok.var annotation.
+		if (isFinal && (in.modifiers & ClassFileConstants.AccFinal) == 0) return;
 		if (in.annotations == null) return;
 		boolean found = false;
-		Annotation valAnnotation = null;
+		Annotation declarationAnnotation = null;
 		
 		for (Annotation ann : in.annotations) {
-			if (PatchVal.couldBeVal(ann.type)) {
+			if (PatchDeclaration.couldBeDeclaration(declarationType, ann.type)) {
 				found = true;
-				valAnnotation = ann;
+				declarationAnnotation = ann;
 				break;
 			}
 		}
@@ -128,7 +147,7 @@ public class PatchValEclipse {
 		
 		if (modifiers == null) return; // This is null only if the project is 1.4 or less. Lombok doesn't work in that.
 		boolean finalIsPresent = false;
-		boolean valIsPresent = false;
+		boolean annotationIsPresent = false;
 		
 		for (Object present : modifiers) {
 			if (present instanceof Modifier) {
@@ -141,23 +160,23 @@ public class PatchValEclipse {
 				Name typeName = ((org.eclipse.jdt.core.dom.Annotation) present).getTypeName();
 				if (typeName != null) {
 					String fullyQualifiedName = typeName.getFullyQualifiedName();
-					if ("val".equals(fullyQualifiedName) || "lombok.val".equals(fullyQualifiedName)) {
-						valIsPresent = true;
+					if (declarationType.annotation.getSimpleName().equals(fullyQualifiedName) || declarationType.annotation.getName().equals(fullyQualifiedName)) {
+						annotationIsPresent = true;
 					}
 				}
 			}
 		}
 		
-		if (!finalIsPresent) {
+		if (isFinal && !finalIsPresent) {
 			modifiers.add(
-					createModifier(ast, ModifierKeyword.FINAL_KEYWORD, valAnnotation.sourceStart, valAnnotation.sourceEnd));
+					createModifier(ast, ModifierKeyword.FINAL_KEYWORD, declarationAnnotation.sourceStart, declarationAnnotation.sourceEnd));
 		}
 		
-		if (!valIsPresent) {
-			MarkerAnnotation newAnnotation = createValAnnotation(ast, valAnnotation, valAnnotation.sourceStart, valAnnotation.sourceEnd);
+		if (!annotationIsPresent) {
+			MarkerAnnotation newAnnotation = createAnnotation(declarationType, ast, declarationAnnotation, declarationAnnotation.sourceStart, declarationAnnotation.sourceEnd);
 			try {
-				Reflection.astConverterRecordNodes.invoke(converter, newAnnotation, valAnnotation);
-				Reflection.astConverterRecordNodes.invoke(converter, newAnnotation.getTypeName(), valAnnotation.type);
+				Reflection.astConverterRecordNodes.invoke(converter, newAnnotation, declarationAnnotation);
+				Reflection.astConverterRecordNodes.invoke(converter, newAnnotation.getTypeName(), declarationAnnotation.type);
 			} catch (IllegalAccessException e) {
 				throw Lombok.sneakyThrow(e);
 			} catch (InvocationTargetException e) {
@@ -186,7 +205,7 @@ public class PatchValEclipse {
 		return modifier;
 	}
 	
-	public static MarkerAnnotation createValAnnotation(AST ast, Annotation original, int start, int end) {
+	public static MarkerAnnotation createAnnotation(DeclarationType declarationType, AST ast, Annotation original, int start, int end) {
 		MarkerAnnotation out = null;
 		try {
 			out = Reflection.markerAnnotationConstructor.newInstance(ast);
@@ -199,17 +218,17 @@ public class PatchValEclipse {
 		}
 		
 		if (out != null) {
-			SimpleName valName = ast.newSimpleName("val");
-			valName.setSourceRange(start, end - start + 1);
+			SimpleName annotationName = ast.newSimpleName(declarationType.annotation.getSimpleName());
+			annotationName.setSourceRange(start, end - start + 1);
 			if (original.type instanceof SingleTypeReference) {
-				out.setTypeName(valName);
-				setIndex(valName, 1);
+				out.setTypeName(annotationName);
+				setIndex(annotationName, 1);
 			} else {
 				SimpleName lombokName = ast.newSimpleName("lombok");
 				lombokName.setSourceRange(start, end - start + 1);
 				setIndex(lombokName, 1);
-				setIndex(valName, 2);
-				QualifiedName fullName = ast.newQualifiedName(lombokName, valName);
+				setIndex(annotationName, 2);
+				QualifiedName fullName = ast.newQualifiedName(lombokName, annotationName);
 				setIndex(fullName, 1);
 				fullName.setSourceRange(start, end - start + 1);
 				out.setTypeName(fullName);

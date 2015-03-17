@@ -21,19 +21,20 @@
  */
 package lombok.eclipse.agent;
 
-import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
-import static lombok.eclipse.Eclipse.*;
+import static lombok.eclipse.Eclipse.poss;
+import static lombok.eclipse.handlers.EclipseHandlerUtil.makeType;
 
 import java.lang.reflect.Field;
 
+import lombok.core.DeclarationType;
+
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
 import org.eclipse.jdt.internal.compiler.ast.Expression;
-import org.eclipse.jdt.internal.compiler.ast.ForeachStatement;
 import org.eclipse.jdt.internal.compiler.ast.ForStatement;
+import org.eclipse.jdt.internal.compiler.ast.ForeachStatement;
 import org.eclipse.jdt.internal.compiler.ast.LocalDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.QualifiedTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.SingleTypeReference;
-import org.eclipse.jdt.internal.compiler.ast.Statement;
 import org.eclipse.jdt.internal.compiler.ast.TypeReference;
 import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.lookup.ArrayBinding;
@@ -45,15 +46,12 @@ import org.eclipse.jdt.internal.compiler.lookup.TypeBinding;
 import org.eclipse.jdt.internal.compiler.lookup.TypeConstants;
 import org.eclipse.jdt.internal.compiler.lookup.TypeIds;
 
-import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
-
-public class PatchVal {
-	
-	// This is half of the work for 'val' support - the other half is in PatchValEclipse. This half is enough for ecj.
-	// Creates a copy of the 'initialization' field on a LocalDeclaration if the type of the LocalDeclaration is 'val', because the completion parser will null this out,
-	// which in turn stops us from inferring the intended type for 'val x = 5;'. We look at the copy.
+public class PatchDeclaration {
+	// This is half of the work for 'val' and 'var' support - the other half is in PatchDeclarationEclipse. This half is enough for ecj.
+	// Creates a copy of the 'initialization' field on a LocalDeclaration if the type of the LocalDeclaration is 'val' or 'var', because the completion parser will null this out,
+	// which in turn stops us from inferring the intended type for 'val/var x = 5;'. We look at the copy.
 	// Also patches local declaration to not call .resolveType() on the initializer expression if we've already done so (calling it twice causes weird errors),
-	// and patches .resolve() on LocalDeclaration itself to just-in-time replace the 'val' vartype with the right one.
+	// and patches .resolve() on LocalDeclaration itself to just-in-time replace the 'val' and 'var' vartype with the right one.
 	
 	public static TypeBinding skipResolveInitializerIfAlreadyCalled(Expression expr, BlockScope scope) {
 		if (expr.resolvedType != null) return expr.resolvedType;
@@ -82,23 +80,23 @@ public class PatchVal {
 		return true;
 	}
 	
-	public static boolean couldBeVal(TypeReference ref) {
+	public static boolean couldBeDeclaration(DeclarationType declarationType, TypeReference ref) {
 		if (ref instanceof SingleTypeReference) {
 			char[] token = ((SingleTypeReference)ref).token;
-			return matches("val", token);
+			return matches(declarationType.annotation.getSimpleName(), token);
 		}
 		
 		if (ref instanceof QualifiedTypeReference) {
 			char[][] tokens = ((QualifiedTypeReference)ref).tokens;
 			if (tokens == null || tokens.length != 2) return false;
-			return matches("lombok", tokens[0]) && matches("val", tokens[1]);
+			return matches("lombok", tokens[0]) && matches(declarationType.annotation.getSimpleName(), tokens[1]);
 		}
 		
 		return false;
 	}
 	
-	private static boolean isVal(TypeReference ref, BlockScope scope) {
-		if (!couldBeVal(ref)) return false;
+	private static boolean isDeclaration(DeclarationType declarationType, TypeReference ref, BlockScope scope) {
+		if (!couldBeDeclaration(declarationType, ref)) return false;
 		
 		TypeBinding resolvedType = ref.resolvedType;
 		if (resolvedType == null) resolvedType = ref.resolveType(scope, false);
@@ -106,7 +104,7 @@ public class PatchVal {
 		
 		char[] pkg = resolvedType.qualifiedPackageName();
 		char[] nm = resolvedType.qualifiedSourceName();
-		return matches("lombok", pkg) && matches("val", nm);
+		return matches("lombok", pkg) && matches(declarationType.annotation.getSimpleName(), nm);
 	}
 	
 	public static final class Reflection {
@@ -127,21 +125,28 @@ public class PatchVal {
 		}
 	}
 
-	public static boolean handleValForLocalDeclaration(LocalDeclaration local, BlockScope scope) {
-		return doHandleValForLocalDeclaration(local, scope, null);
+	public static boolean handleDeclarationForLocalDeclaration(LocalDeclaration local, BlockScope scope) {
+		doHandleDeclarationForLocalDeclaration(local, scope, null);
+		return false;
 	}
 	
-	private static boolean doHandleValForLocalDeclaration(LocalDeclaration local, BlockScope scope, TypeReference forcedType) {
-		if (local == null || !LocalDeclaration.class.equals(local.getClass())) return false;
+	private static void doHandleDeclarationForLocalDeclaration(LocalDeclaration local, BlockScope scope, TypeReference forcedType) {
+		for(DeclarationType declarationType : DeclarationType.types) {
+			doHandleDeclarationForLocalDeclaration(declarationType, local, scope, forcedType);
+		}
+	}
+		
+	private static void doHandleDeclarationForLocalDeclaration(DeclarationType declarationType, LocalDeclaration local, BlockScope scope, TypeReference forcedType) {
+		if (local == null || !LocalDeclaration.class.equals(local.getClass())) return;
 		boolean decomponent = false;
 		
-		if (!isVal(local.type, scope)) return false;
+		if (!isDeclaration(declarationType, local.type, scope)) return;
 		
 		if (forcedType != null) {
-			local.modifiers |= ClassFileConstants.AccFinal;
-			local.annotations = addValAnnotation(local.annotations, local.type, scope);
+			if (declarationType.isFinal) local.modifiers |= ClassFileConstants.AccFinal;
+			local.annotations = addDeclarationAnnotation(local.annotations, local.type, scope);
 			local.type = forcedType;
-			return false;
+			return;
 		}
 		
 		Expression init = local.initialization;
@@ -166,7 +171,7 @@ public class PatchVal {
 		
 		if (init != null) {
 			if (init.getClass().getName().equals("org.eclipse.jdt.internal.compiler.ast.LambdaExpression")) {
-				return false;
+				return;
 			}
 			
 			TypeBinding resolved = null;
@@ -175,7 +180,7 @@ public class PatchVal {
 			} catch (NullPointerException e) {
 				// This definitely occurs if as part of resolving the initializer expression, a
 				// lambda expression in it must also be resolved (such as when lambdas are part of
-				// a ternary expression). This can't result in a viable 'val' matching, so, we
+				// a ternary expression). This can't result in a viable 'val'/'var' matching, so, we
 				// just go with 'Object' and let the IDE print the appropriate errors.
 				resolved = null;
 			}
@@ -188,46 +193,54 @@ public class PatchVal {
 			}
 		}
 		
-		local.modifiers |= ClassFileConstants.AccFinal;
-		local.annotations = addValAnnotation(local.annotations, local.type, scope);
+		if (declarationType.isFinal) local.modifiers |= ClassFileConstants.AccFinal;
+		local.annotations = addDeclarationAnnotation(local.annotations, local.type, scope);
 		local.type = replacement != null ? replacement : new QualifiedTypeReference(TypeConstants.JAVA_LANG_OBJECT, poss(local.type, 3));
 		
-		return false;
+		return;
 	}
 	
-	public static boolean handleValForForEach(ForeachStatement forEach, BlockScope scope) {
-		if (forEach.elementVariable == null) return false;
+	public static boolean handleDeclarationForForEach(ForeachStatement forEach, BlockScope scope) {
+		for(DeclarationType declarationType : DeclarationType.types) {
+			doHandleDeclarationForForEach(declarationType, forEach, scope);
+		}
+		return false;
+	}
 		
-		if (!isVal(forEach.elementVariable.type, scope)) return false;
+	
+	private static void doHandleDeclarationForForEach(DeclarationType declarationType, ForeachStatement forEach, BlockScope scope) {
+		if (forEach.elementVariable == null) return;
+		
+		if (!isDeclaration(declarationType, forEach.elementVariable.type, scope)) return;
 		
 		TypeBinding component = getForEachComponentType(forEach.collection, scope);
-		if (component == null) return false;
+		if (component == null) return;
 		TypeReference replacement = makeType(component, forEach.elementVariable.type, false);
 		
-		forEach.elementVariable.modifiers |= ClassFileConstants.AccFinal;
-		forEach.elementVariable.annotations = addValAnnotation(forEach.elementVariable.annotations, forEach.elementVariable.type, scope);
+		if (declarationType.isFinal) forEach.elementVariable.modifiers |= ClassFileConstants.AccFinal;
+		forEach.elementVariable.annotations = addDeclarationAnnotation(forEach.elementVariable.annotations, forEach.elementVariable.type, scope);
 		forEach.elementVariable.type = replacement != null ? replacement :
 				new QualifiedTypeReference(TypeConstants.JAVA_LANG_OBJECT, poss(forEach.elementVariable.type, 3));
 		
-		return false;
+		return;
 	}
 	
-	public static boolean handleValForFor(ForStatement forLoop, BlockScope scope) {
+	public static boolean handleDeclarationForFor(ForStatement forLoop, BlockScope scope) {
 		if (forLoop.initializations == null || forLoop.initializations.length == 0) return false;
 		
 		if (forLoop.initializations[0] instanceof LocalDeclaration) {
 			LocalDeclaration first = (LocalDeclaration) forLoop.initializations[0];
-			doHandleValForLocalDeclaration(first, scope, null);
+			doHandleDeclarationForLocalDeclaration(first, scope, null);
 			for (int i = 1; i < forLoop.initializations.length; i++) {
 				if (forLoop.initializations[i] instanceof LocalDeclaration) {
-					doHandleValForLocalDeclaration((LocalDeclaration) forLoop.initializations[i], scope, first.type);
+					doHandleDeclarationForLocalDeclaration((LocalDeclaration) forLoop.initializations[i], scope, first.type);
 				}
 			}
 		}
 		return false;
 	}
 	
-	private static Annotation[] addValAnnotation(Annotation[] originals, TypeReference originalRef, BlockScope scope) {
+	private static Annotation[] addDeclarationAnnotation(Annotation[] originals, TypeReference originalRef, BlockScope scope) {
 		Annotation[] newAnn;
 		if (originals != null) {
 			newAnn = new Annotation[1 + originals.length];
